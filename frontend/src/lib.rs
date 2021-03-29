@@ -4,61 +4,56 @@
 #![allow(clippy::wildcard_imports)]
 
 use seed::{prelude::*, *};
+use serde::Deserialize;
 
-// ------ ------
-//     Init
-// ------ ------
-
-// `init` describes what should happen when your app started.
-fn init(_: Url, _: &mut impl Orders<Msg>) -> Model {
-    Model::default()
+#[derive(Deserialize)]
+struct AuthConfig {
+    domain: String,
+    client_id: String,
 }
 
-// ------ ------
-//     Model
-// ------ ------
+struct Model {
+    auth_config: Option<AuthConfig>,
+}
 
-// `Model` describes our app state.
-type Model = i32;
+fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
+    orders.perform_cmd(async {
+        Msg::AuthConfigFetched(
+            async {
+                fetch("/auth_config.json")
+                    .await?
+                    .check_status()?
+                    .json()
+                    .await
+            }
+            .await,
+        )
+    });
+    Model { auth_config: None }
+}
 
-// ------ ------
-//    Update
-// ------ ------
-
-// (Remove the line below once any of your `Msg` variants doesn't implement `Copy`.)
-#[derive(Copy, Clone)]
-// `Msg` describes the different events you can modify state with.
 enum Msg {
-    Increment,
+    AuthConfigFetched(fetch::Result<AuthConfig>),
 }
 
-// `update` describes how to handle each `Msg`.
 fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
     match msg {
-        Msg::Increment => *model += 1,
+        Msg::AuthConfigFetched(auth_config) => {
+            if let Ok(auth_config) = auth_config {
+                model.auth_config = Some(auth_config);
+            }
+        }
     }
 }
 
-// ------ ------
-//     View
-// ------ ------
-
-// (Remove the line below once your `Model` become more complex.)
 #[allow(clippy::trivially_copy_pass_by_ref)]
-// `view` describes what to display.
 fn view(model: &Model) -> Node<Msg> {
-    div![
-        "This is a counter: ",
-        C!["counter"],
-        button![model, ev(Ev::Click, |_| Msg::Increment),],
-    ]
+    div![model
+        .auth_config
+        .as_ref()
+        .map(|c| { div![c.domain.as_str(), c.client_id.as_str()] })]
 }
 
-// ------ ------
-//     Start
-// ------ ------
-
-// (This function is invoked by `init` function in `index.html`.)
 #[wasm_bindgen(start)]
 pub fn start() {
     // Mount the `app` to the element with the `id` "app".
