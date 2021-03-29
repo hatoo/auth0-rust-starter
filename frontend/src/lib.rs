@@ -6,13 +6,32 @@
 use seed::{prelude::*, *};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct AuthConfig {
     domain: String,
     client_id: String,
 }
 
+#[derive(Deserialize, Debug)]
+struct User {
+    nickname: String,
+    name: String,
+    picture: String,
+    updated_at: String,
+    email: String,
+    email_verified: bool,
+    sub: String,
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(catch)]
+    async fn init_auth(domain: String, client_id: String) -> Result<JsValue, JsValue>;
+}
+
+#[derive(Default)]
 struct Model {
+    user: Option<User>,
     auth_config: Option<AuthConfig>,
 }
 
@@ -29,29 +48,48 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
             .await,
         )
     });
-    Model { auth_config: None }
+    Default::default()
 }
 
 enum Msg {
     AuthConfigFetched(fetch::Result<AuthConfig>),
+    AuthInitialized(Result<JsValue, JsValue>),
 }
 
-fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
+fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
-        Msg::AuthConfigFetched(auth_config) => {
-            if let Ok(auth_config) = auth_config {
-                model.auth_config = Some(auth_config);
+        Msg::AuthConfigFetched(Ok(auth_config)) => {
+            let domain = auth_config.domain.clone();
+            let client_id = auth_config.client_id.clone();
+            orders.perform_cmd(async { Msg::AuthInitialized(init_auth(domain, client_id).await) });
+            model.auth_config = Some(auth_config);
+        }
+        Msg::AuthConfigFetched(Err(err)) => {
+            error!("AuthConfig fetch failed!", err);
+        }
+        Msg::AuthInitialized(Ok(user)) => {
+            if not(user.is_undefined()) {
+                match serde_wasm_bindgen::from_value(user) {
+                    Ok(user) => model.user = Some(user),
+                    Err(error) => error!("User deserialization failed!", error),
+                }
             }
+        }
+        Msg::AuthInitialized(Err(error)) => {
+            error!("Auth initialization failed!", error);
         }
     }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn view(model: &Model) -> Node<Msg> {
-    div![model
-        .auth_config
-        .as_ref()
-        .map(|c| { div![c.domain.as_str(), c.client_id.as_str()] })]
+    div![
+        model
+            .auth_config
+            .as_ref()
+            .map(|c| { div![format!("{:?}", c)] }),
+        model.user.as_ref().map(|u| { div![format!("{:?}", u)] })
+    ]
 }
 
 #[wasm_bindgen(start)]
