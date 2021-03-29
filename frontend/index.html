@@ -31,7 +31,8 @@
         }
 
         window.get_token = async () => {
-            return await auth0.getTokenSilently();
+            const claims = await auth0.getIdTokenClaims();
+            return await claims.__raw;
         }
 
         window.redirect_to_sign_up = async () => {
