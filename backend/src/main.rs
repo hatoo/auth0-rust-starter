@@ -1,10 +1,26 @@
-use alcoholic_jwt::{token_kid, validate, Validation, JWKS};
+use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWKS};
 use anyhow::Context;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let client = reqwest::Client::default();
     let authority = "https://hatoo.auth0.com/";
-    let jwks = reqwest::get(format!("{}.well-known/jwks.json", authority))
+
+    let res = validate_token(&client, authority, std::env::var("Token")?.as_str()).await?;
+
+    dbg!(res.claims);
+
+    Ok(())
+}
+
+async fn validate_token(
+    client: &reqwest::Client,
+    authority: &str,
+    token: &str,
+) -> Result<ValidJWT, anyhow::Error> {
+    let jwks = client
+        .get(format!("{}.well-known/jwks.json", authority))
+        .send()
         .await?
         .json::<JWKS>()
         .await?;
@@ -12,9 +28,8 @@ async fn main() -> Result<(), anyhow::Error> {
     let validations = vec![
         Validation::Issuer(authority.to_string()),
         Validation::SubjectPresent,
+        Validation::NotExpired,
     ];
-
-    let token = std::env::var("Token")?;
 
     let kid = token_kid(&token)
         .ok()
@@ -23,11 +38,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let jwk = jwks.find(&kid).context("find jwk")?;
 
-    let res = validate(token.as_str(), jwk, validations)
-        .ok()
-        .context("validate")?;
+    let res = validate(token, jwk, validations).ok().context("validate")?;
 
-    dbg!(res.claims);
-
-    Ok(())
+    Ok(res)
 }
