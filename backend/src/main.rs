@@ -1,15 +1,41 @@
 use alcoholic_jwt::{token_kid, validate, ValidJWT, Validation, JWKS};
 use anyhow::Context;
+use warp::Filter;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    env_logger::init();
+
+    let authority = std::env::var("Authority")?;
     let client = reqwest::Client::default();
-    let authority = "https://hatoo.auth0.com/";
 
-    let res = validate_token(&client, authority, std::env::var("Token")?.as_str()).await?;
+    let auth = warp::header::<String>("Authorization")
+        .or(warp::any().map(|| String::new()))
+        .unify()
+        .and(warp::any().map(move || authority.clone()))
+        .and(warp::any().map(move || client.clone()))
+        .and_then(
+            |bearer_token: String, authority: String, client: reqwest::Client| async move {
+                Ok::<Option<ValidJWT>, std::convert::Infallible>(
+                    match bearer_token
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .as_slice()
+                    {
+                        &["Bearer", token] => validate_token(&client, authority.as_str(), token)
+                            .await
+                            .ok(),
+                        _ => None,
+                    },
+                )
+            },
+        );
 
-    dbg!(res.claims);
+    let api = warp::path("api")
+        .and(auth)
+        .map(|jwt: Option<ValidJWT>| format!("{:?}", jwt.map(|jwt| jwt.claims)));
 
+    warp::serve(api).run(([127, 0, 0, 1], 3030)).await;
     Ok(())
 }
 
