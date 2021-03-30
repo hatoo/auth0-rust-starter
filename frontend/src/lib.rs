@@ -43,13 +43,14 @@ extern "C" {
 
 #[derive(Default)]
 struct Model {
+    base_url: Url,
     user: Option<User>,
     auth_config: Option<AuthConfig>,
     token: Option<String>,
     api_response: Option<String>,
 }
 
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
+fn init(url: Url, orders: &mut impl Orders<Msg>) -> Model {
     orders.perform_cmd(async {
         Msg::AuthConfigFetched(
             async {
@@ -62,7 +63,10 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
             .await,
         )
     });
-    Default::default()
+    Model {
+        base_url: url,
+        ..Default::default()
+    }
 }
 
 enum Msg {
@@ -96,6 +100,10 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                     Ok(user) => model.user = Some(user),
                     Err(error) => error!("User deserialization failed!", error),
                 }
+            }
+            let search = model.base_url.search_mut();
+            if search.remove("code").is_some() && search.remove("state").is_some() {
+                model.base_url.go_and_replace();
             }
         }
         Msg::AuthInitialized(Err(error)) => {
