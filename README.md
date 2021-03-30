@@ -2,7 +2,7 @@
 
 # Usage
 
-## 1. Signup Auth0 and cretae some App
+## 1. Signup Auth0 and create some App
 ## 2. Run backend
 
     cd backend
