@@ -31,11 +31,21 @@ async fn main() -> Result<(), anyhow::Error> {
             },
         );
 
-    let api = warp::path("api")
-        .and(auth)
-        .map(|jwt: Option<ValidJWT>| format!("{:?}", jwt.map(|jwt| jwt.claims)));
+    let api = warp::path("api").and(auth).map(|jwt: Option<ValidJWT>| {
+        jwt.map(|jwt| format!("{:?}", jwt.claims))
+            .unwrap_or("Authorization Failed".to_string())
+    });
 
-    warp::serve(api).run(([127, 0, 0, 1], 3030)).await;
+    warp::serve(
+        api.with(
+            warp::cors()
+                .allow_any_origin()
+                .allow_methods(&[warp::http::Method::GET])
+                .allow_headers(&[warp::http::header::AUTHORIZATION]),
+        ),
+    )
+    .run(([127, 0, 0, 1], 3030))
+    .await;
     Ok(())
 }
 

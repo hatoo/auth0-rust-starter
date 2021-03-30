@@ -46,6 +46,7 @@ struct Model {
     user: Option<User>,
     auth_config: Option<AuthConfig>,
     token: Option<String>,
+    api_response: Option<String>,
 }
 
 fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
@@ -74,6 +75,8 @@ enum Msg {
     RedirectingToLogIn(Result<(), JsValue>),
     ShowToken,
     TokenFetched(Result<JsValue, JsValue>),
+    CallAPI,
+    APIfetched(fetch::Result<String>),
 }
 
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
@@ -132,22 +135,53 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
         Msg::TokenFetched(Err(error)) => {
             error!("Cannot get token!", error);
         }
+
+        Msg::CallAPI => {
+            orders.perform_cmd(async {
+                Msg::APIfetched(
+                    async {
+                        let token = get_token()
+                            .await
+                            .ok()
+                            .and_then(|js_value| js_value.as_string())
+                            .unwrap_or_default();
+
+                        fetch::Request::new("http://localhost:3030/api")
+                            .header(fetch::Header::authorization(format!("Bearer {}", token)))
+                            .fetch()
+                            .await?
+                            .check_status()?
+                            .text()
+                            .await
+                    }
+                    .await,
+                )
+            });
+        }
+        Msg::APIfetched(Ok(response)) => {
+            model.api_response = Some(response);
+        }
+        Msg::APIfetched(Err(error)) => {
+            error!("API call failed!", error);
+        }
     }
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn view(model: &Model) -> Node<Msg> {
     div![
-        model
+        p![model
             .auth_config
             .as_ref()
-            .map(|c| { div![format!("{:?}", c)] }),
-        model.user.as_ref().map(|u| { div![format!("{:?}", u)] }),
-        model.token.as_ref(),
+            .map(|c| { div![format!("{:?}", c)] })],
+        p![model.user.as_ref().map(|u| { div![format!("{:?}", u)] })],
+        p![model.token.as_ref()],
         button!["Sign up", ev(Ev::Click, |_| Msg::SignUp),],
         button!["Log in", ev(Ev::Click, |_| Msg::LogIn),],
         button!["Log out", ev(Ev::Click, |_| Msg::LogOut),],
-        button!["get token", ev(Ev::Click, |_| Msg::ShowToken),]
+        button!["get token", ev(Ev::Click, |_| Msg::ShowToken),],
+        button!["Call API", ev(Ev::Click, |_| Msg::CallAPI)],
+        p![model.api_response.as_ref()]
     ]
 }
 
